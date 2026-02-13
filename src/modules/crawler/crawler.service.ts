@@ -5,6 +5,7 @@ import {
   ViolationData,
   VehicleType,
 } from './interfaces/violation.interface';
+import { CacheService } from '../../shared/cache/cache.service';
 
 @Injectable()
 export class CrawlerService implements OnModuleInit, OnModuleDestroy {
@@ -12,6 +13,8 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
   private browser: Browser | null = null;
   private context: BrowserContext | null = null;
   private isInitialized = false;
+
+  constructor(private readonly cacheService: CacheService) {}
 
   /**
    * Khởi tạo browser khi module được load
@@ -94,6 +97,14 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Tạo cache key từ plateNumber và vehicleType
+   * Format: PLATENUMBER_VEHICLETYPE (VD: 30E43807_car)
+   */
+  private getCacheKey(plateNumber: string, vehicleType: VehicleType): string {
+    return `${plateNumber.toUpperCase()}_${vehicleType}`;
+  }
+
+  /**
    * Tra cứu nhiều biển số xe cùng lúc (sử dụng chung một browser context)
    * @param plateNumberItems Danh sách biển số và loại xe
    * @returns Danh sách kết quả tra cứu
@@ -110,44 +121,69 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(`🔍 Bắt đầu tra cứu ${plateNumberItems.length} biển số`);
     
     const results: ViolationResult[] = [];
+    let cacheHits = 0;
+    let cacheMisses = 0;
     
     // Tra cứu tuần tự từng biển số (sử dụng chung browser context)
     for (let i = 0; i < plateNumberItems.length; i++) {
       const item = plateNumberItems[i];
-      this.logger.log(
-        `[${i + 1}/${plateNumberItems.length}] Tra cứu: ${item.plateNumber}`,
-      );
+      const cacheKey = this.getCacheKey(item.plateNumber, item.vehicleType);
       
-      const result = await this.lookupViolation(
-        item.plateNumber,
-        item.vehicleType,
-      );
+      // Kiểm tra cache trước
+      const cachedResult = this.cacheService.get<ViolationResult>(cacheKey);
       
-      results.push(result);
-      
-      // Nghỉ ngắn giữa các request để tránh bị chặn
-      if (i < plateNumberItems.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      if (cachedResult) {
+        this.logger.log(
+          `[${i + 1}/${plateNumberItems.length}] 💾 Cache hit: ${item.plateNumber}`,
+        );
+        results.push(cachedResult);
+        cacheHits++;
+      } else {
+        this.logger.log(
+          `[${i + 1}/${plateNumberItems.length}] 🔍 Tra cứu: ${item.plateNumber}`,
+        );
+        
+        const result = await this.lookupViolation(
+          item.plateNumber,
+          item.vehicleType,
+        );
+        
+        results.push(result);
+        cacheMisses++;
+        
+        // Nghỉ ngắn giữa các request để tránh bị chặn
+        if (i < plateNumberItems.length - 1 && cacheMisses > 0) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
       }
     }
 
     this.logger.log(
-      `✅ Hoàn thành tra cứu ${results.length} biển số`,
+      `✅ Hoàn thành tra cứu ${results.length} biển số (Cache hits: ${cacheHits}, Misses: ${cacheMisses})`,
     );
     
     return results;
   }
 
   /**
-   * Tra cứu vi phạm theo biển số xe
+   * Tra cứu vi phạm theo biển số xe (PRIVATE - chỉ dùng internal)
    * @param plateNumber Biển số xe
    * @param vehicleType Loại phương tiện
    * @returns Kết quả tra cứu
    */
-  async lookupViolation(
+  private async lookupViolation(
     plateNumber: string,
     vehicleType: VehicleType,
   ): Promise<ViolationResult> {
+    // Kiểm tra cache trước
+    const cacheKey = this.getCacheKey(plateNumber, vehicleType);
+    const cachedResult = this.cacheService.get<ViolationResult>(cacheKey);
+    
+    if (cachedResult) {
+      this.logger.log(`💾 Trả về kết quả từ cache cho: ${plateNumber}`);
+      return cachedResult;
+    }
+
     // Kiểm tra browser có healthy không
     if (!(await this.isHealthy())) {
       this.logger.warn('Browser không healthy, đang restart...');
@@ -209,12 +245,18 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
         `✅ Tra cứu thành công! Tìm thấy ${violationData.length} vi phạm.`,
       );
 
-      return {
+      const result: ViolationResult = {
         success: true,
         plateNumber,
         vehicleType,
         data: violationData,
       };
+      
+      // Lưu vào cache với TTL 1 giờ
+      this.cacheService.set(cacheKey, result);
+      this.logger.debug(`💾 Đã cache kết quả cho: ${plateNumber}`);
+      
+      return result;
     } catch (error: any) {
       this.logger.error(`❌ Lỗi khi tra cứu biển số ${plateNumber}:`, error.message);
 
