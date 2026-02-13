@@ -94,6 +94,51 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
+   * Tra cứu nhiều biển số xe cùng lúc (sử dụng chung một browser context)
+   * @param plateNumberItems Danh sách biển số và loại xe
+   * @returns Danh sách kết quả tra cứu
+   */
+  async lookupMultipleViolations(
+    plateNumberItems: Array<{ plateNumber: string; vehicleType: VehicleType }>,
+  ): Promise<ViolationResult[]> {
+    // Kiểm tra browser có healthy không
+    if (!(await this.isHealthy())) {
+      this.logger.warn('Browser không healthy, đang restart...');
+      await this.restart();
+    }
+
+    this.logger.log(`🔍 Bắt đầu tra cứu ${plateNumberItems.length} biển số`);
+    
+    const results: ViolationResult[] = [];
+    
+    // Tra cứu tuần tự từng biển số (sử dụng chung browser context)
+    for (let i = 0; i < plateNumberItems.length; i++) {
+      const item = plateNumberItems[i];
+      this.logger.log(
+        `[${i + 1}/${plateNumberItems.length}] Tra cứu: ${item.plateNumber}`,
+      );
+      
+      const result = await this.lookupViolation(
+        item.plateNumber,
+        item.vehicleType,
+      );
+      
+      results.push(result);
+      
+      // Nghỉ ngắn giữa các request để tránh bị chặn
+      if (i < plateNumberItems.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    this.logger.log(
+      `✅ Hoàn thành tra cứu ${results.length} biển số`,
+    );
+    
+    return results;
+  }
+
+  /**
    * Tra cứu vi phạm theo biển số xe
    * @param plateNumber Biển số xe
    * @param vehicleType Loại phương tiện

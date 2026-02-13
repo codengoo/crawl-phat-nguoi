@@ -35,19 +35,42 @@ curl -X POST http://localhost:3000/violations/lookup \
   }'
 ```
 
-### 4. Health check
+### 4. Tra cứu nhiều biển số cùng lúc (Multiple Lookup)
+
+```bash
+curl -X POST http://localhost:3000/violations/lookup/multiple \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plateNumbers": [
+      {
+        "plateNumber": "30E43807",
+        "vehicleType": "car"
+      },
+      {
+        "plateNumber": "51F12345",
+        "vehicleType": "motorbike"
+      },
+      {
+        "plateNumber": "29H67890",
+        "vehicleType": "car"
+      }
+    ]
+  }'
+```
+
+### 5. Health check
 
 ```bash
 curl http://localhost:3000/health
 ```
 
-### 5. Browser status
+### 6. Browser status
 
 ```bash
 curl http://localhost:3000/health/browser
 ```
 
-### 6. Restart browser
+### 7. Restart browser
 
 ```bash
 curl -X POST http://localhost:3000/health/browser/restart
@@ -55,7 +78,7 @@ curl -X POST http://localhost:3000/health/browser/restart
 
 ## Sử dụng JavaScript/TypeScript
 
-### Node.js với fetch
+### Node.js với fetch - Tra cứu đơn
 
 ```javascript
 const lookupViolation = async (plateNumber, vehicleType = 'car') => {
@@ -84,7 +107,47 @@ lookupViolation('30E43807', 'car')
   .catch(error => console.error('Error:', error));
 ```
 
-### Axios
+### Node.js với fetch - Tra cứu nhiều biển số
+
+```javascript
+const lookupMultipleViolations = async (plateNumbers) => {
+  const response = await fetch('http://localhost:3000/violations/lookup/multiple', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      plateNumbers,
+    }),
+  });
+
+  const data = await response.json();
+  return data;
+};
+
+// Sử dụng
+const plateNumbersToCheck = [
+  { plateNumber: '30E43807', vehicleType: 'car' },
+  { plateNumber: '51F12345', vehicleType: 'motorbike' },
+  { plateNumber: '29H67890', vehicleType: 'car' },
+];
+
+lookupMultipleViolations(plateNumbersToCheck)
+  .then(result => {
+    console.log('Total:', result.total);
+    console.log('Successful:', result.successful);
+    console.log('Failed:', result.failed);
+    
+    result.results.forEach((item, index) => {
+      console.log(`\n[${index + 1}] ${item.plateNumber} (${item.vehicleType}):`);
+      console.log(`  - Success: ${item.success}`);
+      console.log(`  - Violations: ${item.data.length}`);
+    });
+  })
+  .catch(error => console.error('Error:', error));
+```
+
+### Axios - Tra cứu đơn
 
 ```javascript
 const axios = require('axios');
@@ -110,9 +173,40 @@ const lookupViolation = async (plateNumber, vehicleType = 'car') => {
 })();
 ```
 
+### Axios - Tra cứu nhiều biển số
+
+```javascript
+const axios = require('axios');
+
+const lookupMultipleViolations = async (plateNumbers) => {
+  try {
+    const response = await axios.post('http://localhost:3000/violations/lookup/multiple', {
+      plateNumbers,
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error:', error.response?.data || error.message);
+    throw error;
+  }
+};
+
+// Sử dụng
+(async () => {
+  const plateNumbers = [
+    { plateNumber: '30E43807', vehicleType: 'car' },
+    { plateNumber: '51F12345', vehicleType: 'motorbike' },
+  ];
+  
+  const result = await lookupMultipleViolations(plateNumbers);
+  console.log(`Đã tra cứu ${result.total} biển số`);
+  console.log(`Thành công: ${result.successful}, Thất bại: ${result.failed}`);
+})();
+```
+
 ## Sử dụng Python
 
-### requests library
+### requests library - Tra cứu đơn
 
 ```python
 import requests
@@ -144,7 +238,43 @@ if __name__ == '__main__':
         print(f"Location: {violation['violationDetail']['location']}")
 ```
 
-### aiohttp (async)
+### requests library - Tra cứu nhiều biển số
+
+```python
+import requests
+
+def lookup_multiple_violations(plate_numbers):
+    url = 'http://localhost:3000/violations/lookup/multiple'
+    payload = {
+        'plateNumbers': plate_numbers
+    }
+    
+    response = requests.post(url, json=payload)
+    response.raise_for_status()
+    
+    return response.json()
+
+# Sử dụng
+if __name__ == '__main__':
+    plate_numbers = [
+        {'plateNumber': '30E43807', 'vehicleType': 'car'},
+        {'plateNumber': '51F12345', 'vehicleType': 'motorbike'},
+        {'plateNumber': '29H67890', 'vehicleType': 'car'},
+    ]
+    
+    result = lookup_multiple_violations(plate_numbers)
+    
+    print(f"Total: {result['total']}")
+    print(f"Successful: {result['successful']}")
+    print(f"Failed: {result['failed']}")
+    
+    for idx, item in enumerate(result['results'], 1):
+        print(f"\n[{idx}] {item['plateNumber']} ({item['vehicleType']}):")
+        print(f"  - Success: {item['success']}")
+        print(f"  - Violations: {len(item['data'])}")
+```
+
+### aiohttp (async) - Tra cứu đơn
 
 ```python
 import aiohttp
@@ -165,6 +295,39 @@ async def lookup_violation(plate_number, vehicle_type='car'):
 async def main():
     result = await lookup_violation('30E43807', 'car')
     print('Result:', result)
+
+asyncio.run(main())
+```
+
+### aiohttp (async) - Tra cứu nhiều biển số
+
+```python
+import aiohttp
+import asyncio
+
+async def lookup_multiple_violations(plate_numbers):
+    url = 'http://localhost:3000/violations/lookup/multiple'
+    payload = {
+        'plateNumbers': plate_numbers
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, json=payload) as response:
+            return await response.json()
+
+# Sử dụng
+async def main():
+    plate_numbers = [
+        {'plateNumber': '30E43807', 'vehicleType': 'car'},
+        {'plateNumber': '51F12345', 'vehicleType': 'motorbike'},
+        {'plateNumber': '29H67890', 'vehicleType': 'car'},
+    ]
+    
+    result = await lookup_multiple_violations(plate_numbers)
+    
+    print(f"Tổng số: {result['total']}")
+    print(f"Thành công: {result['successful']}")
+    print(f"Thất bại: {result['failed']}")
 
 asyncio.run(main())
 ```

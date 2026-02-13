@@ -6,7 +6,9 @@ REST API service sử dụng NestJS và Playwright để tra cứu thông tin xe
 
 - ✅ REST API với NestJS framework
 - ✅ Tra cứu vi phạm theo biển số xe
+- ✅ Tra cứu nhiều biển số cùng lúc (bulk lookup)
 - ✅ Hỗ trợ nhiều loại phương tiện (xe máy, ô tô, xe đạp điện)
+- ✅ Tái sử dụng browser context để tối ưu hiệu suất
 - ✅ Health check endpoints để monitor browser
 - ✅ Swagger API documentation
 - ✅ Docker & Docker Compose support
@@ -21,11 +23,13 @@ src/
 ├── app.module.ts           # Root module
 ├── crawler/                # Crawler module
 │   ├── crawler.module.ts
-│   ├── crawler.service.ts  # Playwright browser service
+│   ├── crawler.service.ts  # Camoufox browser service
 │   ├── crawler.controller.ts
 │   ├── dto/               # Data Transfer Objects
 │   │   ├── lookup-violation.dto.ts
-│   │   └── violation-response.dto.ts
+│   │   ├── lookup-multiple-violation.dto.ts
+│   │   ├── violation-response.dto.ts
+│   │   └── multiple-violation-response.dto.ts
 │   └── interfaces/        # TypeScript interfaces
 │       └── violation.interface.ts
 └── health/                # Health check module
@@ -139,7 +143,67 @@ docker-compose down
 }
 ```
 
-### 2. Health Check
+### 2. Tra cứu nhiều vi phạm
+
+**Endpoint:** `POST /violations/lookup/multiple`
+
+**Request Body:**
+```json
+{
+  "plateNumbers": [
+    {
+      "plateNumber": "30E43807",
+      "vehicleType": "car"
+    },
+    {
+      "plateNumber": "51F12345",
+      "vehicleType": "motorbike"
+    },
+    {
+      "plateNumber": "29H67890",
+      "vehicleType": "car"
+    }
+  ]
+}
+```
+
+**Giới hạn:** Tối thiểu 1, tối đa 20 biển số trong một request
+
+**Response:**
+```json
+{
+  "total": 3,
+  "successful": 3,
+  "failed": 0,
+  "results": [
+    {
+      "success": true,
+      "plateNumber": "30E43807",
+      "vehicleType": "car",
+      "data": []
+    },
+    {
+      "success": true,
+      "plateNumber": "51F12345",
+      "vehicleType": "motorbike",
+      "data": []
+    },
+    {
+      "success": true,
+      "plateNumber": "29H67890",
+      "vehicleType": "car",
+      "data": []
+    }
+  ]
+}
+```
+
+**Ưu điểm:**
+- Sử dụng chung một browser context, hiệu suất cao
+- Không cần mở/đóng browser nhiều lần
+- Phù hợp khi cần tra cứu nhiều biển số
+
+### 3. Health Check
 
 **Endpoint:** `GET /health`
 
@@ -160,7 +224,7 @@ curl http://localhost:3000/health
 }
 ```
 
-### 3. Browser Health Check
+### 4. Browser Health Check
 
 **Endpoint:** `GET /health/browser`
 
@@ -177,7 +241,7 @@ curl http://localhost:3000/health/browser
 }
 ```
 
-### 4. Restart Browser
+### 5. Restart Browser
 
 **Endpoint:** `POST /health/browser/restart`
 
