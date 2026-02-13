@@ -6,9 +6,6 @@ import {
   VehicleType,
 } from './interfaces/violation.interface';
 
-/**
- * Service quản lý Playwright browser và thực hiện crawl dữ liệu vi phạm
- */
 @Injectable()
 export class CrawlerService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CrawlerService.name);

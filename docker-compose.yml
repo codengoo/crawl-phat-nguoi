@@ -1,8 +1,3 @@
-# =============================================================================
-# Docker Compose cho CSGT Crawler Service
-# =============================================================================
-version: '3.8'
-
 services:
   # Service chính
   csgt-crawler:
@@ -11,16 +6,16 @@ services:
       dockerfile: Dockerfile
     container_name: csgt-crawler-api
     ports:
-      - "3000:3000"
+      - "3001:3001"
     environment:
       - NODE_ENV=production
-      - PORT=3000
+      - PORT=3001
     volumes:
       # Mount screenshots directory để có thể xem từ host
       - ./screenshots:/app/screenshots
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3

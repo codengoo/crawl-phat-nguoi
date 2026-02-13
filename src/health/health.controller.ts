@@ -2,17 +2,11 @@ import { Controller, Get, Post, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { HealthService } from './health.service';
 
-/**
- * Controller xử lý health check endpoints
- */
 @ApiTags('health')
 @Controller('health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
-  /**
-   * Endpoint kiểm tra health tổng thể
-   */
   @Get()
   @ApiOperation({
     summary: 'Kiểm tra trạng thái tổng thể của service',
@@ -37,9 +31,6 @@ export class HealthController {
     return await this.healthService.checkHealth();
   }
 
-  /**
-   * Endpoint kiểm tra trạng thái browser
-   */
   @Get('browser')
   @ApiOperation({
     summary: 'Kiểm tra trạng thái Playwright browser',

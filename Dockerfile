@@ -53,15 +53,15 @@ RUN mkdir -p /app/screenshots && \
 
 # Environment variables
 ENV NODE_ENV=production \
-    PORT=3000 \
+    PORT=3001 \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
 # Expose port
-EXPOSE 3000
+EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+    CMD node -e "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Run application
 CMD ["node", "dist/main"]
