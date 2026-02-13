@@ -10,13 +10,9 @@ export class PlateNumberItem {
   @ApiProperty({
     description: 'Biển số xe (ví dụ: 30E43807, 51F12345)',
     example: '30E43807',
-    pattern: '^[0-9]{2}[A-Z]{1,2}[0-9]{4,5}$',
   })
   @IsNotEmpty({ message: 'Biển số xe không được để trống' })
   @IsString({ message: 'Biển số xe phải là chuỗi ký tự' })
-  @Matches(/^[0-9]{2}[A-Z]{1,2}[0-9]{4,5}$/i, {
-    message: 'Biển số xe không đúng định dạng (VD: 30E43807)',
-  })
   plateNumber: string;
 
   @ApiProperty({
