@@ -11,8 +11,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm ci --only=production && \
+# Install dependencies (including devDependencies for build)
+RUN npm ci && \
     npm cache clean --force
 
 # Copy source code
@@ -24,7 +24,7 @@ RUN npm run build
 # =============================================================================
 # Stage 2: Production - Image cuối cùng tối ưu
 # =============================================================================
-FROM mcr.microsoft.com/playwright:v1.41.0-jammy
+FROM mcr.microsoft.com/playwright:v1.58.2-jammy
 
 # Set working directory
 WORKDIR /app
@@ -58,10 +58,6 @@ ENV NODE_ENV=production \
 
 # Expose port
 EXPOSE 3001
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Run application
 CMD ["node", "dist/main"]
