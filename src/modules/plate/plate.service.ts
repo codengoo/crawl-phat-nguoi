@@ -1,90 +1,29 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { chromium, Browser, Page, BrowserContext } from 'playwright';
-import {
-  ViolationResult,
-  ViolationData,
-  VehicleType,
-} from './interfaces/violation.interface';
+import { Injectable, Logger } from '@nestjs/common';
+import { ProxyRecord } from '@nghiavuive/proxy-free';
+import { Locator, Page, errors } from 'playwright';
+import { BrowserManagerService, ProxyService } from '../../shared/browser';
 import { CacheService } from '../../shared/cache/cache.service';
+import {
+    VehicleType,
+    ViolationData,
+    ViolationResult,
+} from './interfaces/violation.interface';
 
 @Injectable()
-export class CrawlerService implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(CrawlerService.name);
-  private browser: Browser | null = null;
-  private context: BrowserContext | null = null;
-  private isInitialized = false;
+export class PlateService {
+  private readonly logger = new Logger(PlateService.name);
 
-  constructor(private readonly cacheService: CacheService) {}
-
-  /**
-   * Khởi tạo browser khi module được load
-   */
-  async onModuleInit() {
-    await this.initBrowser();
-  }
-
-  /**
-   * Đóng browser khi module bị destroy
-   */
-  async onModuleDestroy() {
-    await this.closeBrowser();
-  }
-
-  /**
-   * Khởi tạo Playwright browser
-   */
-  private async initBrowser(): Promise<void> {
-    try {
-      this.logger.log('Đang khởi tạo Playwright browser...');
-
-      this.browser = await chromium.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-extensions',
-        ],
-      });
-
-      this.context = await this.browser.newContext({
-        userAgent:
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        viewport: { width: 1366, height: 768 },
-        ignoreHTTPSErrors: true,
-      });
-
-      this.isInitialized = true;
-      this.logger.log('✅ Browser đã sẵn sàng!');
-    } catch (error) {
-      this.logger.error('❌ Lỗi khi khởi tạo browser:', error);
-      this.isInitialized = false;
-      throw error;
-    }
-  }
-
-  /**
-   * Đóng browser
-   */
-  private async closeBrowser(): Promise<void> {
-    if (this.browser) {
-      this.logger.log('Đóng browser...');
-      await this.browser.close();
-      this.browser = null;
-      this.context = null;
-      this.isInitialized = false;
-    }
-  }
+  constructor(
+    private readonly cacheService: CacheService,
+    private readonly browserManager: BrowserManagerService,
+    private readonly proxyService: ProxyService,
+  ) {}
 
   /**
    * Kiểm tra trạng thái browser
    */
   async isHealthy(): Promise<boolean> {
-    return this.isInitialized && this.browser !== null && this.browser.isConnected();
+    return this.browserManager.isHealthy();
   }
 
   /**
@@ -92,15 +31,14 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
    */
   async restart(): Promise<void> {
     this.logger.warn('🔄 Đang restart browser...');
-    await this.closeBrowser();
-    await this.initBrowser();
+    await this.browserManager.restart();
   }
 
   /**
    * Tạo cache key từ plateNumber và vehicleType
    * Format: PLATENUMBER_VEHICLETYPE (VD: 30E43807_car)
    */
-  private getCacheKey(plateNumber: string, vehicleType: VehicleType): string {
+  private buildCacheKey(plateNumber: string, vehicleType: VehicleType): string {
     return `${plateNumber.toUpperCase()}_${vehicleType}`;
   }
 
@@ -119,19 +57,19 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.logger.log(`🔍 Bắt đầu tra cứu ${plateNumberItems.length} biển số`);
-    
+
     const results: ViolationResult[] = [];
     let cacheHits = 0;
     let cacheMisses = 0;
-    
+
     // Tra cứu tuần tự từng biển số (sử dụng chung browser context)
     for (let i = 0; i < plateNumberItems.length; i++) {
       const item = plateNumberItems[i];
-      const cacheKey = this.getCacheKey(item.plateNumber, item.vehicleType);
-      
+      const cacheKey = this.buildCacheKey(item.plateNumber, item.vehicleType);
+
       // Kiểm tra cache trước
       const cachedResult = this.cacheService.get<ViolationResult>(cacheKey);
-      
+
       if (cachedResult) {
         this.logger.log(
           `[${i + 1}/${plateNumberItems.length}] 💾 Cache hit: ${item.plateNumber}`,
@@ -142,15 +80,12 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(
           `[${i + 1}/${plateNumberItems.length}] 🔍 Tra cứu: ${item.plateNumber}`,
         );
-        
-        const result = await this.lookupViolation(
-          item.plateNumber,
-          item.vehicleType,
-        );
-        
+
+        const result = await this.lookupViolation(item.plateNumber, item.vehicleType);
+
         results.push(result);
         cacheMisses++;
-        
+
         // Nghỉ ngắn giữa các request để tránh bị chặn
         if (i < plateNumberItems.length - 1 && cacheMisses > 0) {
           await new Promise(resolve => setTimeout(resolve, 1000));
@@ -161,7 +96,7 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
     this.logger.log(
       `✅ Hoàn thành tra cứu ${results.length} biển số (Cache hits: ${cacheHits}, Misses: ${cacheMisses})`,
     );
-    
+
     return results;
   }
 
@@ -176,55 +111,80 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
     vehicleType: VehicleType,
   ): Promise<ViolationResult> {
     // Kiểm tra cache trước
-    const cacheKey = this.getCacheKey(plateNumber, vehicleType);
-    const cachedResult = this.cacheService.get<ViolationResult>(cacheKey);
-    
-    if (cachedResult) {
-      this.logger.log(`💾 Trả về kết quả từ cache cho: ${plateNumber}`);
-      return cachedResult;
-    }
-
-    // Kiểm tra browser có healthy không
-    if (!(await this.isHealthy())) {
-      this.logger.warn('Browser không healthy, đang restart...');
-      await this.restart();
-    }
-
-    let page: Page | null = null;
+    const cacheKey = this.buildCacheKey(plateNumber, vehicleType);
 
     try {
-      this.logger.log(`🔍 Tra cứu biển số: ${plateNumber}`);
+      const result = await this.lookupWithProxyFallback(plateNumber, vehicleType);
 
-      // Tạo page mới từ context
-      page = await this.context!.newPage();
+      if (result.success) {
+        this.cacheService.set(cacheKey, result);
+        this.logger.debug(`💾 Đã cache kết quả cho: ${plateNumber}`);
+      }
 
-      // Truy cập trang tra cứu
+      return result;
+    } catch (error: any) {
+      this.logger.error(`❌ Lỗi khi tra cứu biển số ${plateNumber}:`, error.message);
+
+      return {
+        success: false,
+        plateNumber,
+        vehicleType,
+        data: [],
+        error: error.message,
+      };
+    }
+  }
+
+  private async lookupWithProxyFallback(
+    plateNumber: string,
+    vehicleType: VehicleType,
+  ): Promise<ViolationResult> {
+    try {
+      return await this.executeLookup(plateNumber, vehicleType);
+    } catch (error) {
+      if (this.isTimeoutError(error)) {
+        this.logger.warn(
+          `⏳ Timeout khi tra cứu ${plateNumber}, chuyển sang thử proxy...`,
+        );
+
+        const proxyResult = await this.tryLookupWithProxies(plateNumber, vehicleType);
+        if (proxyResult) return proxyResult;
+      }
+
+      throw error;
+    }
+  }
+
+  private async executeLookup(
+    plateNumber: string,
+    vehicleType: VehicleType,
+    proxy?: ProxyRecord,
+  ): Promise<ViolationResult> {
+    const { page, dispose } = await this.browserManager.getPage(proxy);
+
+    try {
+      const proxyInfo = proxy ? ` qua proxy ${proxy.proxy}` : '';
+      this.logger.log(`🔍 Tra cứu biển số: ${plateNumber}${proxyInfo}`);
+
       await page.goto('https://www.csgt.vn/tra-cuu-phat-nguoi', {
         waitUntil: 'networkidle',
         timeout: 30000,
       });
 
-      // Đợi form load
       await page.waitForSelector('form#violationsForm', { timeout: 20000 });
-
-      // Chọn loại phương tiện
       await page.selectOption('select[name="vehicle_type"]', vehicleType);
       await page.waitForTimeout(500);
 
-      // Nhập biển số xe
       await page.fill('input[name="plate_number"]', plateNumber);
       await page.waitForTimeout(500);
 
-      // Click nút tra cứu
       await Promise.all([
         page.click('#submitBtn'),
         page.waitForLoadState('networkidle', { timeout: 15000 }),
       ]);
 
-      // Đợi kết quả
       await page.waitForTimeout(3000);
 
-      // Kiểm tra có vi phạm không
       const violationCount = await page.locator('.violation-card').count();
 
       if (violationCount === 0) {
@@ -237,42 +197,63 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
         };
       }
 
-      // Parse dữ liệu vi phạm
       this.logger.log(`📋 Tìm thấy ${violationCount} vi phạm, đang parse...`);
       const violationData = await this.extractAllViolations(page);
 
-      this.logger.log(
-        `✅ Tra cứu thành công! Tìm thấy ${violationData.length} vi phạm.`,
-      );
+      this.logger.log(`✅ Tra cứu thành công! Tìm thấy ${violationData.length} vi phạm.`);
 
-      const result: ViolationResult = {
+      return {
         success: true,
         plateNumber,
         vehicleType,
         data: violationData,
       };
-      
-      // Lưu vào cache với TTL 1 giờ
-      this.cacheService.set(cacheKey, result);
-      this.logger.debug(`💾 Đã cache kết quả cho: ${plateNumber}`);
-      
-      return result;
-    } catch (error: any) {
-      this.logger.error(`❌ Lỗi khi tra cứu biển số ${plateNumber}:`, error.message);
-
-      return {
-        success: false,
-        plateNumber,
-        vehicleType,
-        data: [],
-        error: error.message,
-      };
     } finally {
-      // Đóng page sau khi xong
-      if (page) {
-        await page.close();
+      await dispose();
+    }
+  }
+
+  private async tryLookupWithProxies(
+    plateNumber: string,
+    vehicleType: VehicleType,
+  ): Promise<ViolationResult | null> {
+    const proxies = await this.proxyService.getBestProxies();
+
+    if (!proxies.length) {
+      this.logger.warn('Không có proxy nào để thử.');
+      return null;
+    }
+
+    for (const proxy of proxies) {
+      const isAlive = await this.proxyService.isProxyAlive(proxy);
+
+      if (!isAlive) {
+        this.logger.warn(`Proxy ${proxy.proxy} không hoạt động, bỏ qua.`);
+        continue;
+      }
+
+      try {
+        this.logger.log(`🔁 Đang thử tra cứu ${plateNumber} qua proxy ${proxy.proxy}`);
+        return await this.executeLookup(plateNumber, vehicleType, proxy);
+      } catch (error) {
+        if (!this.isTimeoutError(error)) {
+          throw error;
+        }
+
+        this.logger.warn(`Proxy ${proxy.proxy} bị timeout, thử proxy tiếp theo...`);
       }
     }
+
+    this.logger.warn('Đã thử hết danh sách proxy nhưng vẫn gặp lỗi timeout.');
+    return null;
+  }
+
+  private isTimeoutError(error: unknown): boolean {
+    if (!error) return false;
+    if (error instanceof errors.TimeoutError) return true;
+
+    const message = (error as any)?.message;
+    return typeof message === 'string' && message.toLowerCase().includes('timeout');
   }
 
   /**
@@ -285,12 +266,8 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
       const violations: ViolationData[] = [];
 
       for (let i = 0; i < count; i++) {
-        const violation = await this.extractViolationFromCard(
-          violationCards.nth(i),
-        );
-        if (violation) {
-          violations.push(violation);
-        }
+        const violation = await this.extractViolationFromCard(violationCards.nth(i));
+        if (violation) violations.push(violation);
       }
 
       return violations;
@@ -304,16 +281,10 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
    * Trích xuất dữ liệu từ một violation card
    */
   private async extractViolationFromCard(
-    violationCard: any,
+    violationCard: Locator,
   ): Promise<ViolationData | null> {
     try {
-      // Lấy biển số
-      const plateNumber = await violationCard
-        .locator('.violation-title')
-        .textContent()
-        .then((text: string | null) =>
-          text?.replace(/[^0-9A-Z.-]/g, '').trim() || '',
-        );
+      console.log("content", await violationCard.innerHTML());
 
       // Lấy trạng thái
       const status = await violationCard
@@ -331,20 +302,14 @@ export class CrawlerService implements OnModuleInit, OnModuleDestroy {
       const location = await this.getInfoValue(violationCard, 'Địa điểm:');
 
       // Lấy thông tin xử lý
-      const detectingUnit = await this.getInfoValue(
-        violationCard,
-        'Đơn vị phát hiện:',
-      );
+      const detectingUnit = await this.getInfoValue(violationCard, 'Đơn vị phát hiện:');
       const detectingAddress = await this.getInfoValue(violationCard, 'Địa chỉ:', 0);
-      const resolvingUnit = await this.getInfoValue(
-        violationCard,
-        'Đơn vị giải quyết:',
-      );
+      const resolvingUnit = await this.getInfoValue(violationCard, 'Đơn vị giải quyết:');
       const resolvingAddress = await this.getInfoValue(violationCard, 'Địa chỉ:', 1);
       const phone = await this.getInfoValue(violationCard, 'Điện thoại:');
 
       return {
-        plateNumber,
+        plateNumber: 'a',
         status,
         vehicleInfo: {
           vehicleType: vehicleTypeText,

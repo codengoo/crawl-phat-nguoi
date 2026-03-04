@@ -1,35 +1,35 @@
 import {
-  Controller,
-  Post,
-  Body,
-  HttpStatus,
-  HttpCode,
-  Logger,
+    Body,
+    Controller,
+    HttpCode,
+    HttpStatus,
+    Logger,
+    Post,
 } from '@nestjs/common';
 import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
+    ApiOperation,
+    ApiResponse,
+    ApiTags,
 } from '@nestjs/swagger';
-import { CrawlerService } from './crawler.service';
-import { LookupMultipleViolationDto } from './dto/lookup-multiple-violation.dto';
-import { MultipleViolationResponseDto } from './dto/multiple-violation-response.dto';
+import { LookupMultipleViolationDto, MultipleViolationResponseDto } from './dto';
+import { PlateService } from './plate.service';
 
-@ApiTags('violations')
-@Controller('violations')
-export class CrawlerController {
-  private readonly logger = new Logger(CrawlerController.name);
+@ApiTags('plates')
+@Controller('plates')
+export class PlateController {
+  private readonly logger = new Logger(PlateController.name);
 
-  constructor(private readonly crawlerService: CrawlerService) {}
+  constructor(private readonly plateService: PlateService) {}
 
   @Post('lookup')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Tra cứu vi phạm giao thông',
+    summary: 'Tra cứu vi phạm giao thông theo biển số',
     description:
       'Tra cứu thông tin vi phạm cho nhiều biển số xe cùng lúc (tối đa 20 biển số). ' +
       'Kết quả được cache trong 1 giờ để tăng tốc độ tra cứu. ' +
-      'Sử dụng chung một browser context nên hiệu suất cao.',
+      'Sử dụng chung một browser context nên hiệu suất cao. ' +
+      'Tự động thử lại với proxy nếu gặp timeout.',
   })
   @ApiResponse({
     status: 200,
@@ -43,7 +43,7 @@ export class CrawlerController {
       `Nhận request tra cứu ${lookupDto.plateNumbers.length} biển số`,
     );
 
-    const results = await this.crawlerService.lookupMultipleViolations(
+    const results = await this.plateService.lookupMultipleViolations(
       lookupDto.plateNumbers,
     );
 

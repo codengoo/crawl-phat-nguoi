@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { CrawlerService } from '../crawler/crawler.service';
+import { PlateService } from '../plate/plate.service';
 
 /**
  * Service kiểm tra health của ứng dụng
@@ -8,7 +8,7 @@ import { CrawlerService } from '../crawler/crawler.service';
 export class HealthService {
   private readonly logger = new Logger(HealthService.name);
 
-  constructor(private readonly crawlerService: CrawlerService) {}
+  constructor(private readonly plateService: PlateService) {}
 
   /**
    * Kiểm tra trạng thái tổng thể của service
@@ -22,7 +22,7 @@ export class HealthService {
       healthy: boolean;
     };
   }> {
-    const browserHealthy = await this.crawlerService.isHealthy();
+    const browserHealthy = await this.plateService.isHealthy();
 
     return {
       status: browserHealthy ? 'ok' : 'degraded',
@@ -44,7 +44,7 @@ export class HealthService {
     message: string;
   }> {
     try {
-      const isHealthy = await this.crawlerService.isHealthy();
+      const isHealthy = await this.plateService.isHealthy();
 
       if (isHealthy) {
         return {
@@ -78,7 +78,7 @@ export class HealthService {
   }> {
     try {
       this.logger.log('Nhận yêu cầu restart browser...');
-      await this.crawlerService.restart();
+      await this.plateService.restart();
 
       return {
         success: true,

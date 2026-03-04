@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
+import { PlateModule } from '../plate/plate.module';
 import { HealthController } from './health.controller';
 import { HealthService } from './health.service';
-import { CrawlerModule } from '../crawler/crawler.module';
 
 /**
  * Module quản lý health check
  */
 @Module({
-  imports: [CrawlerModule],
+  imports: [PlateModule],
   controllers: [HealthController],
   providers: [HealthService],
 })

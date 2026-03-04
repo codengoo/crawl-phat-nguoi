@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { CrawlerModule } from './modules/crawler/crawler.module';
 import { HealthModule } from './modules/health/health.module';
+import { PlateModule } from './modules/plate/plate.module';
 
 /**
  * Root application module
@@ -12,7 +12,7 @@ import { HealthModule } from './modules/health/health.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    CrawlerModule,
+    PlateModule,
     HealthModule,
   ],
 })
